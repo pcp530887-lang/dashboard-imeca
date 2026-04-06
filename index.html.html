@@ -362,68 +362,51 @@ let sortR={col:null,dir:1};
 async function fetchSheets() {
   const btn = document.getElementById('refresh-btn');
   const fname = document.getElementById('fname');
-  btn.textContent = '⏳ Buscando...';
-  btn.disabled = true;
+  btn.textContent = '⏳ Buscando...'; btn.disabled = true;
   sheetsData = {}; sheets = [];
 
-  const debugEl = {innerHTML:'', style:{display:'none'}}; // sem painel debug
-
-  const delay = ms => new Promise(r => setTimeout(r, ms));
-
-  const tryFetch = async (url, debugEl) => {
-    const proxies = [
-      ['Direto',      url],
-      ['AllOrigins',  'https://api.allorigins.win/raw?url=' + encodeURIComponent(url)],
-      ['CorsProxy',   'https://corsproxy.io/?' + encodeURIComponent(url)],
-      ['ThingProxy',  'https://thingproxy.freeboard.io/fetch/' + url],
-      ['HtmlDriven',  'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url)],
-    ];
-    for (const [nome, u] of proxies) {
+  const load = async (name, url) => {
+    for (let t=0; t<3; t++) {
       try {
-        const resp = await fetch(u, {signal: AbortSignal.timeout(12000)});
-        if (!resp.ok) { await delay(500); continue; }
-        const buffer = await resp.arrayBuffer();
-        const text = new TextDecoder('utf-8').decode(buffer);
-        if (!text || text.length < 50) continue;
-        if (text.trimStart().startsWith('<!') || text.trimStart().startsWith('<html')) continue;
-        return text;
-      } catch(e) { await delay(500); continue; }
+        const r = await fetch(url, {signal: AbortSignal.timeout(20000)});
+        if (!r.ok) { await new Promise(x=>setTimeout(x,2000)); continue; }
+        const buf = await r.arrayBuffer();
+        const txt = new TextDecoder('utf-8').decode(buf);
+        if (!txt || txt.length<50 || txt.trimStart().startsWith('<')) {
+          await new Promise(x=>setTimeout(x,2000)); continue;
+        }
+        return txt;
+      } catch(e) { await new Promise(x=>setTimeout(x,2000)); }
     }
     return null;
   };
 
-  const entries = Object.entries(SHEETS_URLS);
-  for (let ei=0; ei<entries.length; ei++) {
-    const [name, url] = entries[ei];
-    if (!url) continue;  // pular aba vazia (intercalação)
-
-    if (ei > 0) await delay(300);  // pequena pausa
-
-    const text = await tryFetch(url, debugEl);
-    if (!text) { debugEl.innerHTML += `❌ ${name}: sem resposta — tente novamente<br>`; continue; }
-
-    const parsed = Papa.parse(text, {skipEmptyLines:false});
-    if (!parsed.data || parsed.data.length < 3) {
-      continue;
-    }
+  for (const [name, url] of Object.entries(SHEETS_URLS)) {
+    if (!url) continue;
+    const txt = await load(name, url);
+    if (!txt) continue;
+    const parsed = Papa.parse(txt, {skipEmptyLines:false});
+    if (!parsed.data || parsed.data.length < 3) continue;
     sheetsData[name] = parsed.data.map(row => row.map(v => v==='' ? null : v));
     sheets.push(name);
-
+    // Atualizar nome do arquivo com progresso
+    fname.textContent = `✅ ${sheets.length}/${Object.keys(SHEETS_URLS).length} abas`;
   }
 
+  btn.disabled = false;
   if (!sheets.length) {
-    fname.textContent = '❌ Erro ao carregar — verifique o link';
-    btn.textContent = '🔄 Carregar'; btn.disabled = false;
-  fname.textContent = '❌ Erro ao carregar'; return;
+    fname.textContent = '❌ Nenhuma aba carregada';
+    btn.textContent = '🔄 Atualizar Dados'; return;
   }
   curSheet = 0;
   buildWeekBtns();
   document.getElementById('empty').style.display = 'none';
   document.getElementById('app').style.display = 'block';
-  fname.textContent = '✅ Atualizado às ' + new Date().toLocaleTimeString('pt-BR');
-  btn.textContent = '🔄 Atualizar Dados'; btn.disabled = false;
+  fname.textContent = '✅ ' + sheets.length + ' semanas · ' + new Date().toLocaleTimeString('pt-BR');
+  btn.textContent = '🔄 Atualizar Dados';
   loadSheet();
 }
+
 
 // ─── UPLOAD LOCAL (xlsx) ────────────────────────────────────────────
 function loadFile(inp) {
